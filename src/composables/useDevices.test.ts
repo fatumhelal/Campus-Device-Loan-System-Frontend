@@ -1,8 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
-import { useDevices } from './useDevices'
 
-// ✅ mock Auth0
+// ✅ mock Auth0 FIRST (before importing useDevices)
 vi.mock('@auth0/auth0-vue', () => ({
   useAuth0: () => ({
     isAuthenticated: ref(false),
@@ -11,23 +10,26 @@ vi.mock('@auth0/auth0-vue', () => ({
 }))
 
 // ✅ mock fetch
-global.fetch = vi.fn(() =>
-  Promise.resolve({
-    ok: true,
-    json: () =>
-      Promise.resolve([
-        { id: '1', brand: 'Apple', model: 'MacBook', category: 'Laptop' },
-      ]),
-  } as any)
-)
+global.fetch = vi.fn()
+
+import { useDevices } from './useDevices'
 
 describe('useDevices', () => {
+  beforeEach(() => {
+    ;(fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { id: '1', brand: 'Apple', model: 'MacBook', category: 'Laptop' },
+      ],
+    })
+  })
+
   it('fetches devices successfully', async () => {
     const { devices, fetchDevices } = useDevices()
 
     await fetchDevices()
 
     expect(devices.value.length).toBe(1)
-    expect(devices.value[0].brand).toBe('Apple')
+    expect(devices.value[0]!.brand).toBe('Apple')
   })
 })
