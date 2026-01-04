@@ -23,15 +23,14 @@ export function loadAppConfig(): AppConfig {
 
 export const appConfig = loadAppConfig();
 
-/**
- * ✅ Teacher-aligned Auth0 options (NO refresh tokens yet)
- */
 export function buildAuth0Options(cfg: AppConfig) {
   return {
     domain: cfg.auth0.domain,
     clientId: cfg.auth0.clientId,
     authorizationParams: {
-      redirect_uri: window.location.origin,
+      redirect_uri: typeof window !== 'undefined'
+        ? window.location.origin
+        : undefined,
       audience: cfg.auth0.audience,
       scope: 'openid profile email',
     },
