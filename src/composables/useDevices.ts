@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue';
+import { ref, type Ref, watch } from 'vue';
 import { appConfig } from '@/config/appConfig';
 import { useAuth0 } from '@auth0/auth0-vue';
 
@@ -7,7 +7,7 @@ export type Device = {
   brand: string;
   model: string;
   category: string;
-  available?: number;
+  isAvailable: boolean;
 };
 
 export function useDevices() {
@@ -23,14 +23,8 @@ export function useDevices() {
     loading.value = true;
     error.value = null;
 
-    // ✅ Safe URL construction (keeps /api)
     const base = appConfig.apiBaseUrl.replace(/\/$/, '');
     const url = `${base}/devices`;
-
-    console.log('🔄 [useDevices] fetchDevices start', {
-      url,
-      isAuthenticated: isAuthenticated.value,
-    });
 
     try {
       const headers: Record<string, string> = {
@@ -38,46 +32,82 @@ export function useDevices() {
       };
 
       if (isAuthenticated.value) {
-        try {
-          const token = await getAccessTokenSilently();
-          if (token) {
-            headers.Authorization = `Bearer ${token}`;
-            console.log('🔑 [useDevices] token attached (Bearer)');
-          } else {
-            console.warn('⚠️ [useDevices] getAccessTokenSilently returned empty token');
-          }
-        } catch (e) {
-          console.warn('⚠️ [useDevices] getAccessTokenSilently failed, continuing public', e);
-        }
-      } else {
-        console.log('👤 [useDevices] not logged in → public request');
+        const token = await getAccessTokenSilently({
+          authorizationParams: {
+            audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+          },
+        });
+        headers.Authorization = `Bearer ${token}`;
       }
 
       const res = await fetch(url, { headers });
-
-      console.log('📡 [useDevices] response', {
-        status: res.status,
-        ok: res.ok,
-        statusText: res.statusText,
-      });
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch devices: ${res.status} ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error('Failed to fetch devices');
 
       const data = await res.json();
-      devices.value = Array.isArray(data) ? data : [];
 
-      console.log('✅ [useDevices] devices loaded', { count: devices.value.length });
+      devices.value = Array.isArray(data)
+        ? data.map((d) => ({
+            id: d.id,
+            brand: d.brand,
+            model: d.model,
+            category: d.category,
+            isAvailable: d.isAvailable === true,
+          }))
+        : [];
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unknown error';
-      console.error('🔥 [useDevices] fetchDevices error', e);
-      error.value = msg;
+      error.value = e instanceof Error ? e.message : 'Unknown error';
     } finally {
       loading.value = false;
-      console.log('🏁 [useDevices] fetchDevices end');
     }
   };
 
-  return { devices, loading, error, fetchDevices };
+  const reserveDevice = async (deviceId: string) => {
+    const base = appConfig.apiBaseUrl.replace(/\/$/, '');
+    const url = `${base}/devices/${deviceId}/reserve`;
+  
+    const token = await getAccessTokenSilently({
+      authorizationParams: {
+        audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+      },
+    });
+  
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error ?? 'Unable to reserve device');
+    }
+  
+    // 🔒 SAFE JSON PARSE (CRITICAL FIX)
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+  
+    await fetchDevices();
+  
+    return data; // may be null — frontend handles it safely
+  };  
+
+  watch(isAuthenticated, (newVal, oldVal) => {
+    if (newVal && !oldVal) {
+      fetchDevices();
+    }
+  });
+
+  return {
+    devices,
+    loading,
+    error,
+    fetchDevices,
+    reserveDevice,
+  };
 }

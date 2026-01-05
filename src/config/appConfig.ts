@@ -32,7 +32,8 @@ export function buildAuth0Options(cfg: AppConfig) {
         ? window.location.origin
         : undefined,
       audience: cfg.auth0.audience,
-      scope: 'openid profile email',
+      scope: 'openid profile email reserve:device',
     },
   };
 }
+
